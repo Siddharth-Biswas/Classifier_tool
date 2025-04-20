@@ -38,7 +38,6 @@ def preprocess_rules(rules_df):
         parsed_rules.append((include, exclude, label))
     return parsed_rules
 
-@lru_cache(maxsize=None)
 def matches_rule(title, include, exclude):
     for and_block in include:
         if not any(word in title for word in and_block):
