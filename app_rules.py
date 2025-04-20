@@ -2,39 +2,40 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from io import BytesIO
-from functools import lru_cache
 
 st.set_page_config(page_title="Product Classifier", layout="wide")
 st.title("🧠 Product Classifier Tool for Flywheel")
-
 st.markdown("Upload your product details and rules to auto-classify using AI-style logic.")
 
 product_file = st.file_uploader("📦 Upload Product Details (Excel)", type=["xlsx"])
 rules_file = st.file_uploader("📋 Upload Classification Rules (Excel)", type=["xlsx"])
 
-def clean_and_split(text):
-    if pd.isna(text):
+def clean_or_split(text):
+    """Always splits by OR logic (used for Exclude)."""
+    if pd.isna(text) or not isinstance(text, str):
         return []
-    if not isinstance(text, str):
-        return []
-    text = text.replace(' and ', ',')
+    text = text.replace(' and ', ',').replace(' or ', ',')
     return [t.strip().lower() for t in text.split(',') if t.strip()]
 
-def parse_include(include_text):
-    if pd.isna(include_text):
+def parse_include(text):
+    """Splits Include text respecting AND and OR logic."""
+    if pd.isna(text) or not isinstance(text, str):
         return []
-    include_text = include_text.lower()
-    if ' and ' in include_text:
-        return [clean_and_split(part) for part in include_text.split(' and ')]
+
+    text = text.lower()
+
+    if ' and ' in text:
+        and_parts = text.split(' and ')
+        return [clean_or_split(part) for part in and_parts]
     else:
-        return [clean_and_split(include_text)]
+        return [clean_or_split(text)]
 
 def preprocess_rules(rules_df):
     parsed_rules = []
-    for _, rule in rules_df.iterrows():
-        include = parse_include(rule['Include'])
-        exclude = clean_and_split(rule['Exclude'])
-        label = rule['Rule']
+    for _, row in rules_df.iterrows():
+        include = parse_include(row['Include'])
+        exclude = clean_or_split(row['Exclude'])
+        label = row['Rule']
         parsed_rules.append((include, exclude, label))
     return parsed_rules
 
@@ -76,24 +77,14 @@ def create_excel_download(df, filename="output.xlsx", sheet_name="Sheet1"):
 
 if product_file and rules_file:
     try:
-        # Load available sheets
-        product_excel = pd.ExcelFile(product_file, engine='openpyxl')
-        rules_excel = pd.ExcelFile(rules_file, engine='openpyxl')
+        product_df = pd.read_excel(product_file, sheet_name=0, engine='openpyxl')  # dynamic: first sheet
+        rules_df = pd.read_excel(rules_file, sheet_name=0, engine='openpyxl')      # dynamic: first sheet
 
-        # Let user pick sheets
-        product_sheet = st.selectbox("📄 Select sheet for Product Details", product_excel.sheet_names, key="product_sheet")
-        rules_sheet = st.selectbox("📄 Select sheet for Rules", rules_excel.sheet_names, key="rules_sheet")
-
-        # Load the selected sheets
-        product_df = product_excel.parse(product_sheet)
-        rules_df = rules_excel.parse(rules_sheet)
-
-        # Check required columns
         if "TITLE" not in product_df.columns:
-            st.error("Selected Product sheet must contain a 'TITLE' column.")
+            st.error("Product file must contain a 'TITLE' column.")
             st.stop()
-        if not all(col in rules_df.columns for col in ["Rule", "Include", "Exclude"]):
-            st.error("Selected Rules sheet must contain 'Rule', 'Include', and 'Exclude' columns.")
+        if not all(col in rules_df.columns for col in ['Rule', 'Include', 'Exclude']):
+            st.error("Rules file must contain 'Rule', 'Include', and 'Exclude' columns.")
             st.stop()
 
     except Exception as e:
@@ -108,11 +99,9 @@ if product_file and rules_file:
     st.subheader("🔍 Preview of Classified Products")
     st.dataframe(output_df, use_container_width=True)
 
-    # Download as CSV
     csv = output_df.to_csv(index=False).encode('utf-8')
     st.download_button("⬇️ Download Classified CSV", csv, "classified_products.csv", "text/csv")
 
-    # Download as Excel
     excel_output = create_excel_download(output_df, "classified_products.xlsx", "Classified_Products")
     if excel_output:
         st.download_button(
@@ -121,6 +110,5 @@ if product_file and rules_file:
             file_name="classified_products.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
 elif product_file or rules_file:
     st.warning("⚠️ Please upload both the Product and Rules files to proceed.")
