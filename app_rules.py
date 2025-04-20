@@ -5,7 +5,7 @@ from io import BytesIO
 from functools import lru_cache
 
 st.set_page_config(page_title="Product Classifier", layout="wide")
-st.title("🧠 Product Classifier Tool")
+st.title("🧠 Product Classifier Tool for Flywheel")
 
 st.markdown("Upload your product details and rules to auto-classify using AI-style logic.")
 
