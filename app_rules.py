@@ -13,20 +13,14 @@ product_file = st.file_uploader("📦 Upload Product Details (Excel)", type=["xl
 rules_file = st.file_uploader("📋 Upload Classification Rules (Excel)", type=["xlsx"])
 
 def clean_and_split(text):
-    """
-    Cleans and splits a text string by commas, handling missing values and "and" conditions.
-    Converts all words to lowercase and strips whitespace.
-    NOTE: This function forces OR logic by replacing "and" with "," for both includes and excludes.
-    """
     if pd.isna(text):
         return []
-    if not isinstance(text, str):  # Handle non-string inputs
+    if not isinstance(text, str):
         return []
     text = text.replace(' and ', ',')
     return [t.strip().lower() for t in text.split(',') if t.strip()]
 
 def parse_include(include_text):
-    """Parses the 'Include' column, handling 'and' conditions for AND logic."""
     if pd.isna(include_text):
         return []
     include_text = include_text.lower()
@@ -36,7 +30,6 @@ def parse_include(include_text):
         return [clean_and_split(include_text)]
 
 def preprocess_rules(rules_df):
-    """Preprocesses the rules DataFrame to extract and parse rule components."""
     parsed_rules = []
     for _, rule in rules_df.iterrows():
         include = parse_include(rule['Include'])
@@ -47,10 +40,6 @@ def preprocess_rules(rules_df):
 
 @lru_cache(maxsize=None)
 def matches_rule(title, include, exclude):
-    """
-    Checks if a title matches a rule's include and exclude criteria.
-    NOTE: Exclude uses OR logic due to the clean_and_split function.
-    """
     for and_block in include:
         if not any(word in title for word in and_block):
             return False
@@ -59,10 +48,6 @@ def matches_rule(title, include, exclude):
     return True
 
 def classify_products(product_df, parsed_rules):
-    """
-    Classifies products based on preprocessed rules.
-    Returns the product DataFrame with an added 'mapped_classifications' column.
-    """
     results = []
     titles = product_df['TITLE'].str.lower().fillna('')
     progress = st.progress(0)
@@ -80,31 +65,36 @@ def classify_products(product_df, parsed_rules):
     return product_df
 
 def create_excel_download(df, filename="output.xlsx", sheet_name="Sheet1"):
-    """
-    Creates an in-memory Excel file from a DataFrame and returns its bytes for download.
-    Handles potential errors during Excel writing.
-    """
     output = BytesIO()
     try:
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name=sheet_name)
         output.seek(0)
-        return output.read()  # Return the bytes
+        return output.read()
     except Exception as e:
         st.error(f"Error creating Excel file: {e}")
         return None
 
 if product_file and rules_file:
     try:
-        product_df = pd.read_excel(product_file, sheet_name='Product_details', engine='openpyxl')
-        rules_df = pd.read_excel(rules_file, sheet_name='Rules', engine='openpyxl')
+        # Load available sheets
+        product_excel = pd.ExcelFile(product_file, engine='openpyxl')
+        rules_excel = pd.ExcelFile(rules_file, engine='openpyxl')
 
-        # Check for required columns
+        # Let user pick sheets
+        product_sheet = st.selectbox("📄 Select sheet for Product Details", product_excel.sheet_names, key="product_sheet")
+        rules_sheet = st.selectbox("📄 Select sheet for Rules", rules_excel.sheet_names, key="rules_sheet")
+
+        # Load the selected sheets
+        product_df = product_excel.parse(product_sheet)
+        rules_df = rules_excel.parse(rules_sheet)
+
+        # Check required columns
         if "TITLE" not in product_df.columns:
-            st.error("Product file must contain a 'TITLE' column.")
+            st.error("Selected Product sheet must contain a 'TITLE' column.")
             st.stop()
-        if "Rule" not in rules_df.columns or "Include" not in rules_df.columns or "Exclude" not in rules_df.columns:
-            st.error("Rules file must contain 'Rule', 'Include', and 'Exclude' columns.")
+        if not all(col in rules_df.columns for col in ["Rule", "Include", "Exclude"]):
+            st.error("Selected Rules sheet must contain 'Rule', 'Include', and 'Exclude' columns.")
             st.stop()
 
     except Exception as e:
